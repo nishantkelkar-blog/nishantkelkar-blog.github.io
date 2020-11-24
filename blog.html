@@ -7,7 +7,17 @@ title: Blog
 <ul>
     {% for post in site.posts %}
     <li>
-        <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+        <div>
+            <h2>
+                <div style="float: left">
+                    <a href="{{ post.url }}">{{ post.title }}</a>
+                </div>
+                {% assign date_format = site.minima.date_format | default: "%b %-d, %Y" %}
+                <div style="text-align: right; float: right">
+                    <span class="post-meta">{{ post.date | date: date_format }}</span>
+                </div>
+            </h2>
+        </div><hr style="clear:both;"/>
         {{ post.excerpt }}
     </li>
     {% endfor %}
