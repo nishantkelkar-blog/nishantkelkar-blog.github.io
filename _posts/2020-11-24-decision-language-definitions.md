@@ -22,6 +22,8 @@ We look at the key characteristics of a program that solves a decision problem, 
 program and a language, we define the class P in terms of a language.
 -->
 
+# Decision problems
+
 A _**decision problem**_ $\Pi$ consists of two parts: a definition of the problem, followed by a posed question based on 
 this definition, with a "yes/no" type answer. 
 For example, the following is a well-formed decision problem:
@@ -58,7 +60,9 @@ Here are a few statements that are true:
 
 From the above examples, note that if $x \in L_{\Pi}$ then implicitly we also know that $x \in D_{\Pi}$.
 
-For any finite set of symbols $\Sigma$, $\Sigma^\*$ is the set of strings made using concatenating symbols from $\Sigma$, 
+# Languages
+
+For any finite set of symbols $\Sigma$, $\Sigma^\*$ is the set of strings made by concatenating symbols from $\Sigma$, 
 each string having finite length.
 We call $\Sigma$ an _alphabet_.
 A few examples of strings from $\Sigma^\*$ where $\Sigma = \\{A, B\\}$ are: "" (empty string, often denoted as $\epsilon$), 
