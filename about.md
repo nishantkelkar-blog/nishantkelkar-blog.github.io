@@ -2,6 +2,14 @@
 layout: default
 title: About
 ---
-# About page
+# A bit about me...
 
-This page tells you a little bit about me.
+Hi there! My name is Nishant, and I am a software engineer in the Bay Area.
+I just graduated from Georgia Tech (in November 2020) and now I have enough free time to start my own blog.
+
+This blog is meant to cover 3 main topics that are close to me: 
+- Pictures and stories of my very playful puppy Joule, 
+- Pictures of delicious food cooked by my lovely wife, and
+- Random Computer Science musings spanning algorithms, machine learning, and AI
+
+I hope you enjoy my posts!
