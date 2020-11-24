@@ -30,8 +30,8 @@ For example, the following is a well-formed decision problem:
 
 <hr />
 <div class="problem">SUBGRAPH-ISOMORPHISM</div>
-**Definition:** Given two graphs $G = (V_G, E_G)$ and $H = (V_H, E_H)$<br/>
-**Question:** Is there a subgraph in $H$, say $H'$, that is isomorphic with $G$?
+<span class="problem-headers">**Definition:**</span> Given two graphs $G = (V_G, E_G)$ and $H = (V_H, E_H)$<br/>
+<span class="problem-headers">**Question:**</span> Is there a subgraph in $H$, say $H'$, that is isomorphic with $G$?
 <hr /><br/>
 This is a decision problem since it has a definition section that clearly defines the inputs (and/or parameters), and 
 a question section that asks a "yes/no" question based on the inputs.
@@ -45,8 +45,8 @@ Consider the following decision problem $\Pi$:
 
 <hr />
 <div class="problem">EVEN-SUM</div>
-**Definition:** Given a tuple of two natural numbers $(a, b)$<br/>
-**Question:** Is the sum $(a + b)$ divisible by 2?
+<span class="problem-headers">**Definition:**</span> Given a tuple of two natural numbers $(a, b)$<br/>
+<span class="problem-headers">**Question:**</span> Is the sum $(a + b)$ divisible by 2?
 <hr /><br/>
 Here are a few statements that are true:
 1. $(0, 1) \in D_{\Pi}$
