@@ -3,6 +3,9 @@
 
 {% include head.html %}
 
+{% if site.tags == "" %}
+    {% include collect_tags.html %}
+{% endif %}
 <body>
 
 {% include header.html %}

@@ -2,6 +2,7 @@
 layout: post
 author: Nishant Kelkar
 title: Deterministic Turing machines
+tags: computer-science turing
 ---
 
 This post goes into the definition of a deterministic Turing machine (DTM) as defined in the "holy grail" book by Garey 

@@ -21,3 +21,8 @@
     font-weight: bold;
     font-size: 17px;
 }
+
+// For tags (see post.html)
+.no-underline:hover {
+  text-decoration: none;
+}

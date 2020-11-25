@@ -2,6 +2,7 @@
 layout: post
 author: Nishant Kelkar
 title: Decision problems and languages
+tags: computer-science
 ---
 
 This post goes into the definitions of decision problems and their relationship to languages, as defined in the "holy grail" 
