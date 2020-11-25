@@ -114,7 +114,7 @@ For example, figure (2) below shows the number $5 = (0101)_2$ with its MSB "0" a
 
 <figure class="blog-fig">
   <img src="/assets/images/dtm-example.jpg">
-  <figcaption>Figure 2. Finding if the number b"0101" (= 5) is even or not using a DTM</figcaption>
+  <figcaption>Figure 2. Finding if the number $(0101)_2\ (= 5)$ is even or not using a DTM</figcaption>
 </figure>
 
 The general idea of the above algorithm then is: starting at square 0, keep moving rightwards until we hit the first $b$
