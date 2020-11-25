@@ -128,3 +128,25 @@ The state transition "table" that encapsulates this strategy is shown below:
 |:-----:|:--------------:|:--------------:|:----------------:|
 | $q_0$ | ($q_0$, 0, +1) | ($q_0$, 1, +1) | ($q_1$, $b$, -1) |
 | $q_1$ | ($q_Y$, 0, +1) | ($q_N$, 1, +1) |        -         |
+
+This table shows the transitions clearly.
+We have one row per non--terminal state in our program, and one column per legal tape symbol encountered.
+In state $q_0$, as long as we encounter any binary symbols (0 or 1), we keep staying in state $q_0$ and we keep moving 
+to the right with $\delta = +1$.
+As soon as we hit a $b$ symbol in $q_0$, we transition to the new state $q_1$ within the FSC and move the read/write head 
+back to the previous tape square (i.e. the LSB of the input integer $a$) with $\delta = -1$.
+
+Our time in $q_1$ is short--lived.
+We read in the bit value at the read/write head (which is pointing to the LSB now).
+If it is a 0, we know that $a$ is even, and so we immediately transition to state $q_Y$ and we are done.
+Otherwise, if it is a 1, we know that $a$ is odd, and so we transition to state $q_N$ and we are also done.
+Note that in state $q_1$, we cannot encounter a $b$ symbol because if we did, then the $b$ symbol encountered in state 
+$q_0$ would not be the first non--binary symbol beyond the LSB. 
+Therefore, in the table above the corresponding cell for $(q_1, b)$ is not filled in.
+
+This algorithm is also seen in action in the figure (2) above.
+The read/write head starts at square 0 and keeps going toward the right until it hits the first $b$ symbol after the 
+LSB.
+At that point, it backtracks to the LSB location, and checks if there is a 0 or a 1 in that square.
+In the example from the figure, since $a = 5$, we know that its LSB position will have a 1, and therefore our algorithm 
+above would exit in state $q_N$ indicating that $a = 5$ is not even. 
