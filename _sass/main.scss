@@ -4,8 +4,20 @@
 }
 
 .problem-headers {
-    display:inline-block;
-    text-align:right;
+    display: inline-block;
+    text-align: right;
     font-weight: bold;
-    width:80px;
+    width: 80px;
+}
+
+.blog-fig img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.blog-fig figcaption {
+    text-align: center;
+    font-weight: bold;
+    font-size: 17px;
 }
