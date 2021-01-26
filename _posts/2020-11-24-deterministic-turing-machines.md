@@ -97,8 +97,7 @@ The decision problem is given as follows:
 <span class="problem-headers">Question:</span> Is $a$ even (divisible by 2)?
 <hr /><br/>
 Let us go through the steps of designing a program for this.
-Suppose that our computer can only understand binary, and so our tape symbols are $\rm T = \\{ 0, 1, b \\}$, and since 
-our program also has to be in binary, $\Sigma = \\{ 0, 1 \\}$.
+Suppose that our computer can only understand binary, and so our tape symbols are $\rm T = \\{ 0, 1, b \\}$, and since our program also has to be in binary, $\Sigma = \\{ 0, 1 \\}$.
 This means that the input number $a$ must be specified in binary to us, for us to run it on the DTM.
 We already have the special states $q_0$, $q_Y$, and $q_N$.
 Here, $q_Y =$ the terminal state we reach if $a$ is even, and $q_N =$ the terminal state we reach if $a$ is not even.
