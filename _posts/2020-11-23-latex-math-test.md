@@ -6,7 +6,7 @@ title: LaTeX test
 
 Test math equation
 
-## Another test 
+## Another test
 
 Inline equation: \\( a^2 = b^2 \\)
 
@@ -24,6 +24,7 @@ $$
 $$
 
 Eq. ref: $\eqref{eq:1}$
+
 ```java
 public void testSample(Integer x);
 public void testSample(Integer x);

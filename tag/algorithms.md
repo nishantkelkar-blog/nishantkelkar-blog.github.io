@@ -1,6 +1,6 @@
 ---
 layout: tag_page
-title: "Tag: test"
-tag: test
+title: "Tag: algorithms"
+tag: algorithms
 robots: noindex
 ---
