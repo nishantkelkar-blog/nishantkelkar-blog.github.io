@@ -77,6 +77,6 @@ We did not want a puppy that would love to laze around all day and not be respon
 We were in search for a loving, bubbly soul full of energy that would enjoy being around us, playing with us and with toys, and eager to learn from us and at the same time, teach us something.
 As destiny would have it, we were to stumble upon exactly such a magnificent pupper only the very next day!
 
+// TODO: write about disappointment at HSSV Milpitas on the same day!
 
-
-
+Onward to the next adventure!
