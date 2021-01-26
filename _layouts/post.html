@@ -1,60 +1,62 @@
 ---
 layout: default
 ---
-<!-- For enabling LaTeX equations and formatting in Markdown (.md) content files -->
-<script type="text/javascript"
-        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_CHTML">
-</script>
-<script type="text/x-mathjax-config">
-MathJax.Hub.Config({
-tex2jax: {
-inlineMath: [['$','$'], ['\\(','\\)']],
-processEscapes: true},
-jax: ["input/TeX","input/MathML","input/AsciiMath","output/CommonHTML"],
-extensions: ["tex2jax.js","mml2jax.js","asciimath2jax.js","MathMenu.js","MathZoom.js","AssistiveMML.js", "[Contrib]/a11y/accessibility-menu.js"],
-TeX: {
-extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js"],
-equationNumbers: {
-autoNumber: "AMS"
-}
-}
-});
 
+<!-- For enabling LaTeX equations and formatting in Markdown (.md) content files -->
+<script
+	type="text/javascript"
+	src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS_CHTML"
+></script>
+<script type="text/x-mathjax-config">
+	MathJax.Hub.Config({
+	tex2jax: {
+	inlineMath: [['$','$'], ['\\(','\\)']],
+	processEscapes: true},
+	jax: ["input/TeX","input/MathML","input/AsciiMath","output/CommonHTML"],
+	extensions: ["tex2jax.js","mml2jax.js","asciimath2jax.js","MathMenu.js","MathZoom.js","AssistiveMML.js", "[Contrib]/a11y/accessibility-menu.js"],
+	TeX: {
+	extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js"],
+	equationNumbers: {
+	autoNumber: "AMS"
+	}
+	}
+	});
 </script>
 
 <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+	<header class="post-header">
+		<h1 class="post-title" itemprop="name headline">
+			{{ page.title | escape }}
+		</h1>
+		<span class="post-tags">
+			{% for tag in page.tags %} {% capture tag_name %}{{ tag }}{% endcapture %}
+			<a class="no-underline" href="/tag/{{ tag_name }}/">
+				<code class="highlighter-rouge"> <nobr>{{ tag_name }}</nobr> </code
+				>&nbsp;
+			</a>
+			{% endfor %}
+		</span>
+		<p class="post-meta">
+			<time
+				datetime="{{ page.date | date_to_xmlschema }}"
+				itemprop="datePublished"
+			>
+				{% assign date_format = site.minima.date_format | default: "%b %-d, %Y"
+				%} {{ page.date | date: date_format }}
+			</time>
+			{% if page.author %} •
+			<span itemprop="author" itemscope itemtype="http://schema.org/Person">
+				<span itemprop="name">{{ page.author }}</span>
+			</span>
+			{% endif %}
+		</p>
+	</header>
 
-    <header class="post-header">
-        <h1 class="post-title" itemprop="name headline">{{ page.title | escape }}</h1>
-        <span class="post-tags">
-            {% for tag in page.tags %}
-                {% capture tag_name %}{{ tag }}{% endcapture %}
-                <a class="no-underline" href="/tag/{{ tag_name }}">
-                    <code class="highlighter-rouge">
-                        <nobr>{{ tag_name }}</nobr>
-                    </code>&nbsp;
-                </a>
-            {% endfor %}
-        </span>
-        <p class="post-meta">
-            <time datetime="{{ page.date | date_to_xmlschema }}" itemprop="datePublished">
-                {% assign date_format = site.minima.date_format | default: "%b %-d, %Y" %}
-                {{ page.date | date: date_format }}
-            </time>
-            {% if page.author %}
-            •
-            <span itemprop="author" itemscope itemtype="http://schema.org/Person">
-                <span itemprop="name">{{ page.author }}</span>
-            </span>
-            {% endif %}
-        </p>
-    </header>
+	<div class="post-content" itemprop="articleBody" style="text-align: justify">
+		{{ content }}
+	</div>
 
-    <div class="post-content" itemprop="articleBody" style="text-align: justify;">
-        {{ content }}
-    </div>
-
-<!--    {% if site.disqus.shortname %}-->
-<!--    {% include disqus_comments.html %}-->
-<!--    {% endif %}-->
+	<!--    {% if site.disqus.shortname %}-->
+	<!--    {% include disqus_comments.html %}-->
+	<!--    {% endif %}-->
 </article>
