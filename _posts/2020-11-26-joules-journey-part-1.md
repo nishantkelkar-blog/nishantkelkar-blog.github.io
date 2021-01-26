@@ -2,7 +2,7 @@
 layout: post
 author: Nishant Kelkar
 title: Joule's journey into our lives - the beginning
-tags: joule puppy adoption
+tags: joule puppy adoption test
 ---
 
 We adopted Joule from the local Humane Society Silicon Valley (HSSV) in Milpitas on the 14th of October, 2019.
