@@ -12,9 +12,9 @@ url: "https://nishantkelkar-blog.github.io" # the base hostname & protocol for y
 # github_username:  nishantkelkar-blog
 
 # For tags via jekyll-tagging
-tag_page_layout: tag_page
-tag_page_dir: tag
-tag_permalink_style: pretty
+# tag_page_layout: tag_page
+# tag_page_dir: tag
+# tag_permalink_style: pretty
 
 # Build settings
 markdown: kramdown
