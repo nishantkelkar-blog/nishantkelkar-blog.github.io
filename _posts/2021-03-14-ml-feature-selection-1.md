@@ -61,7 +61,7 @@ In this situation, the plane correctly classifies all 8 data points, and it was 
 
 For various reasons (mostly cost related), if we have an $n$ dimensional space, collecting ~$2^n$ data points for a reasonably large value of $n$ is not practical.
 Therefore, what we _can_ do is reduce the dimensionality of the dataset to $m$ where $m \ll n$ and also such that if we have $d$ data points, $d >= 2^m$.
-Such a dimensionality reduction amounts to two things: (a) features either have to be thrown away or combined with other features, and (b) since we are going from "more data" to "less data", we are inherently throwing away some information.
+Such a dimensionality reduction amounts to two things: (a) some features are kept and others have to be thrown away, and (b) since we are going from "more data" to "less data", we are inherently throwing away some information.
 And so there is bound to be some data loss.
 
 Such high--dimensional, low cardinality data is not uncommon in practice.
@@ -72,7 +72,7 @@ Or yet still, classifying documents based on the words that they contain.
 In all these examples, the number of data points (#campus students, #engines, #documents) is far far lesser than the data collected per point (library preferences, time series of temperature + pressure, and #possible distinct words in a single document).
 So the motivation to reduce the dimensionality of such small datasets to get better model accuracies certainly exists.
 
-## Key idea: throwing away features
+## Feature selection methods
 
 TODO: write about the wrapper method, filter method here
 
