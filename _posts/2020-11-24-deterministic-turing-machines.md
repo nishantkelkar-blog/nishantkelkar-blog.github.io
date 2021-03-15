@@ -84,7 +84,7 @@ If $\delta = +1$ then the head has moved to the location $l' = l + 1$.
 Note that since $\delta \in \\{ -1, +1 \\}$, we are guaranteed that the read/write head will move to a neighboring tape
 square relative to the location $l$.
 
-# Example walkthrough
+## Example walkthrough
 
 The above section introduces the formal definitions of what a DTM is, along with what we mean by an input _program_ to
 such a DTM.
