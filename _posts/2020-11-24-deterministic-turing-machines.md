@@ -8,7 +8,7 @@ tags: computer-science turing
 This post goes into the definition of a deterministic Turing machine (DTM) as defined in the "holy grail" book by Garey and Johnson.
 This machine is the central computational model around which the complexity class P is defined.
 
-# Definitions
+## Definitions
 
 A deterministic Turing machine (DTM) sits at the center of all of computational complexity theory.
 It is critical to the definition of the computational class of problems known as $\cal{P}$.
