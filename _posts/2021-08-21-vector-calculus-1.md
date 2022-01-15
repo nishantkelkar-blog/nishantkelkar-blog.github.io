@@ -28,7 +28,7 @@ So when we say $D = \frac{\partial A}{\partial B}$ when $A$ and $B$ are matrices
 It is possible that in a different kind of definition of $D$, the result may have shape $(p \times q \times \bf{m} \times \bf{n})$, for example.
 
 As we shall see in later blogs, to get good at setting up Deep Learning pipelines and training models, it isn't required that we know so much about tensor calculus, but it is good to know this because (a) you can show off this kind of stuff in front of your friends :) and (b) it really gives you a deeper understanding of what is happening under the hood, which makes it easier to also read DL literature.
-Below we list the combinations in the first row of the table above, along with some explanations of the cases and examples to that you can "see" the math better.
+Below we list the combinations in the first row of the table above, along with some explanations of the cases and examples so that you can "see" the math better.
 
 ## Derivative of a scalar w.r.t. a scalar
 
