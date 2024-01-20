@@ -265,9 +265,10 @@ PLATFORMS
 DEPENDENCIES
   github-pages
   jekyll
+  jekyll-sitemap
   jekyll-tagging
   minima
   webrick (~> 1.7)
 
 BUNDLED WITH
-   2.2.15
+   2.5.5
