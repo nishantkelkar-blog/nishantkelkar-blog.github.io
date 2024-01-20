@@ -29,3 +29,5 @@ Github Pages blog site for random musings in my life
 - To generate tags so that they show up on the blog, now run `python tag_generator.py` from the root directory.
 
 - Push to Github and validate your new blog entry within a few minutes!
+
+- GitHub help page for running Jekyll sites: https://docs.github.com/en/pages/setting-up-a-github-pages-site-with-jekyll/testing-your-github-pages-site-locally-with-jekyll#keeping-your-site-up-to-date-with-the-github-pages-gem

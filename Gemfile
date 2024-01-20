@@ -9,5 +9,5 @@ gem "jekyll"
 gem "minima"
 gem 'jekyll-tagging'
 gem "github-pages"
-gem "webrick", "~> 1.7"
+gem "webrick"
 gem 'jekyll-sitemap'
