@@ -22,6 +22,7 @@ permalink: /:title
 theme: minima
 plugins:
   - jekyll-feed
+  - jekyll-sitemap
 
 # To configure the navigation bar...nothing else seems to work!
 header_pages:

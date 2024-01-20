@@ -14,7 +14,7 @@ Github Pages blog site for random musings in my life
 
 - Create a new file in the format `<YYYY-MM-dd>_<name>.md` in `_posts/`.
 
-- Add appropriate preamble material to this file.
+- Add appropriate preamble/front-matter material to this file.
   An example preamble is like the following:
 
       ```text
