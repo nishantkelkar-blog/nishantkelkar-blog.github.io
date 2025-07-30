@@ -80,7 +80,7 @@ To find the pixel `(x, y)` that would be processed by a specific 4-tuple (`block
 
 $$
 \begin{align}
-    \text{y} = (\text{blockDim.y} \times \text{blockIdx.y}) + \text{threadIdx.y}
+    \text{y} = (\text{blockDim.y} \times \text{blockIdx.y}) + \text{threadIdx.y} \label{eq:1}
 \end{align}
 $$
 
@@ -88,7 +88,7 @@ Similarly,
 
 $$
 \begin{align}
-    \text{x} = (\text{blockDim.x} \times \text{blockIdx.x}) + \text{threadIdx.x}
+    \text{x} = (\text{blockDim.x} \times \text{blockIdx.x}) + \text{threadIdx.x} \label{eq:2}
 \end{align}
 $$
 
@@ -186,7 +186,7 @@ This is fairly easy actually. Assuming 0-based indexing, there are `y` rows that
 
 So the index of P in the 1-dimensional array is then $i = (y \times n) + x$.
 
-But $\text{y} = (\text{blockDim.y} \times \text{blockIdx.y}) + \text{threadIdx.y}$ and $\text{x} = (\text{blockDim.x} \times \text{blockIdx.x}) + \text{threadIdx.x}$ themselves, so substituting these in,
+But $\text{y}$ and $\text{x}$ themselves are given by equations $\eqref{eq:1}$ and $\eqref{eq:2}$, so substituting these in,
 
 $$
 \begin{align}
