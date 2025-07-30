@@ -1,7 +1,7 @@
 ---
 layout: post
 author: Nishant Kelkar
-title: Cuda Programming Constructs - Part 1
+title: Cuda Constructs - Part 1
 tags: computer-science
 ---
 
