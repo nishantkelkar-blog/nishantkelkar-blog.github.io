@@ -1,21 +1,18 @@
 ---
 layout: post
 author: Nishant Kelkar
-title: Cuda Constructs - Part 2
+title: Cuda Constructs Part 2 - Vector Addition
 tags: computer-science
 ---
 
-* This will become a table of contents (this text will be scrapped).
-{:toc}
-
-In [the part-1 blog post]({% post_url 2025-07-30-cuda-concepts-p1 %}) on this topic, we reviewed what a Grid, Block, and Thread were. We also saw how these are arranged in CUDA for facilitating parallelism of computation (which ultimately runs in each Thread).
-
-In this post, we will continue our review of key CUDA constructs. Particularly, we will dive into:
-
+In [the part-1 blog post]({% post_url 2025-07-30-cuda-concepts-p1 %}) on this topic, we reviewed what a Grid, Block, and Thread were. We also saw how these are arranged in CUDA for facilitating parallelism of computation (which ultimately runs in each Thread). In this post, we will continue our review of key CUDA constructs. Particularly, we will dive into:
 1. How to write a CUDA kernel in C
 2. How to run the CUDA kernel as part of a C++ program (on a T4 GPU)
 
 We will build upon our findings from part 1 of the series.
+
+* This will become a table of contents (this text will be scrapped).
+{:toc}
 
 
 ## CUDA programs in C
@@ -66,6 +63,8 @@ To this, we add the value $$\text{threadIdx.x}$$ which brings us to the element 
 Then, in our CUDA kernel on line 4, we check whether `x` does not exceed the value `n` which is the length of the input vectors. This is for handling the case where the last Block may have threads that go __beyond__ the length of the input arrays. This is also shown in the visual above, where the final Thread at $\text{x} = 2B$ does not overlap over any elements of the input arrays, and so it ends up doing no work.
 
 Finally, on line 6, we set `vr[x]` to be the sum of the values in `va` and `vb` at index `x`.
+
+### Driver program for testing our kernel
 
 The main function that runs the above kernel, is given below:
 
@@ -171,7 +170,9 @@ The above code does 3 things:
 4. It copies the results from the _device_ back to an array on the host, using `cudaMemCpy`. This is so that non-kernel code may later use/examine these results. This is the `vrdh` array ("dh" suffix intended to convey "device to host").
 5. It frees all the memory that was allocated on the device in the GPU global memory for holding inputs and outputs using `cudaFree`.
 
-To run this code, first put together this Makefile (preserve the tabs!):
+### Executing the driver program
+
+To run the above code, first put together this Makefile (preserve the tabs!):
 
 ```Makefile
 objects = main.o kernel.o
@@ -189,7 +190,9 @@ clean:
 	rm -f *.o app
 ```
 
-Then, you would run `make all` to build a binary called `app`. Finally, run it -- `./app` -- to see the results being printed out. Note that the above architecture `sm_75` targets T4 GPUs, you will need to change this based on your GPU variant.
+`nvcc` is the Nvidia compiler for CUDA programs.
+
+Once you create this Makefile, you can run `make all` to build a binary called `app`. Finally, run it -- `./app` -- to see the results being printed out. Note that the above architecture `sm_75` targets T4 GPUs, you will need to change this based on your GPU variant.
 
 For completeness, the assumption is that your project directory looks like this:
 
@@ -291,4 +294,4 @@ __global__ void vectorAdd(float* va, float* vb, float* vr, int l);
 
 ## Separating out CUDA and C++ codes
 
-[This blog](https://developer.nvidia.com/blog/separate-compilation-linking-cuda-device-code/) post from Nvidia is also a great resource to understand in greater detail what is happening behind the scenes when using `nvcc` for compilation and a separate tool like `g++` for linking.
+[This blog](https://developer.nvidia.com/blog/separate-compilation-linking-cuda-device-code/) post from Nvidia is a great resource to understand in greater detail what is happening behind the scenes when using `nvcc` for compilation and a separate tool like `g++` for linking.
