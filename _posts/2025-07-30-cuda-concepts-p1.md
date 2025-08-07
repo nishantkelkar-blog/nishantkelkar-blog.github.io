@@ -1,12 +1,11 @@
 ---
 layout: post
 author: Nishant Kelkar
-title: Cuda Constructs - Part 1
+title: Cuda Constructs Part 1 - Grid, Block, Thread
 tags: computer-science
 ---
 
 In this post, we will review some key CUDA programming concepts. Particularly, we will dive into:
-
 1. What are the key constructs to think about when working with CUDA?
 2. How does a pixel (x, y) map to the CUDA constructs for a 2D image?
 3. How does linearization of images in memory work? What is the math behind this?
