@@ -5,11 +5,11 @@ title: Cuda Constructs - Part 1
 tags: computer-science
 ---
 
-Today we will review some key CUDA programming concepts. Particularly, we will dive into:
+In this post, we will review some key CUDA programming concepts. Particularly, we will dive into:
 
-- What are the key constructs to think about when working with CUDA?
-- How does a pixel (x, y) map to the CUDA constructs for a 2D image?
-- How does linearization of images in memory work? What is the math behind this?
+1. What are the key constructs to think about when working with CUDA?
+2. How does a pixel (x, y) map to the CUDA constructs for a 2D image?
+3. How does linearization of images in memory work? What is the math behind this?
 
 ## Introduction
 
@@ -38,7 +38,6 @@ CUDA exposes a few datastructures for accessing these various dimensions and obj
 Within a Block in a Grid, `blockDim` gives the dimensions of the Block. `blockDim.x` gives the Block dimension -- i.e. the number of Threads -- in the x-direction. Similar definitions hold for `blockDim.y` and `blockDim.z`.
 
 **Note:** Each Block within a Grid must have the same dimensions.
-
 
 <figure class="blog-fig">
   <img src="/assets/images/cuda-gridblockthread.png">
