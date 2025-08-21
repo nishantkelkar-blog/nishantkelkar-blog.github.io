@@ -235,7 +235,7 @@ int are_arrays_equal(const T* array1, const T* array2, size_t size, int decimals
     // The tolerance is a small value that accounts for floating-point inaccuracies.
     T tolerance;
     if constexpr (std::is_floating_point_v<T>) {
-        tolerance = std::pow(10.0, -decimals) * std::numeric_limits<T>::epsilon();
+        tolerance = std::pow(10.0, -decimals);
     } else {
         // For integer types, a tolerance of 0 means strict equality.
         tolerance = 0;
