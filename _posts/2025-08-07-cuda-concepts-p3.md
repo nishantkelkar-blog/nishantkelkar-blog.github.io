@@ -10,7 +10,6 @@ In this blog post, we will dive deeper into how memory accesses work on a GPU. P
 - How CUDA coalesces global memory accesses, and how to structure kernels to optimize accesses by coalescing them.
 - What shared memory banks are, how bank conflicts can occur, and how to remedy them.
 
-TABLE OF CONTENTS
 * This will become a table of contents (this text will be scrapped).
 {:toc}
 
