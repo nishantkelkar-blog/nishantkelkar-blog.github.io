@@ -1,6 +1,6 @@
 ---
 layout: tag_page
-title: "Tag: turing"
-tag: turing
+title: "Tag: ml-ops"
+tag: ml-ops
 robots: noindex
 ---
