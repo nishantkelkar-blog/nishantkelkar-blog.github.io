@@ -7,98 +7,168 @@ tags: machine-learning deep-learning system-design
 
 Suppose you have a request whose prompt and generated output together span 8,192 tokens. The embedding space of these tokens is `d` dimensional, giving us an `8192 x d` matrix of token embeddings. During both the prefill and decode stages, we would compute many thousands of key and value vectors (KV vectors) across these 8,192 tokens. This blog post goes deeper into how vLLM manages memory for these KV vectors (the so-called "KV Cache") and an optimization that kicks in when prompt prefixes are shared across requests (which in real-world scenarios is always true, e.g. system prompts).
 
+* This will become a table of contents (this text will be scrapped).
+{:toc}
 
 ## The Problem
 
-Imagine you have a request spanning 8,192 tokens (prompt + output). Once you project each of these tokens into the $d_{head}$ dimensional space (using the $W_Q$, $W_K$, and $W_V$ projection matrices), we now have a massive computation in front of us.
-First, each token's embedding needs to "attend to" all the tokens that came before it. This means each token $t_i$'s query vector $q_i \in \mathbb{R}^{1 \times d_{head}}$ must multiply ${K}^T_{j≤i}$ of dimension $d_{head} \times i$.
-Think about the number of values that must be stored for this 1 token $t_i$ so that it is useful in future tokens' attention computation. We need 1 key vector $k_i$, and 1 value vector $v_i$ (both have the same shape). Both $k_i$ and $v_i$ are re-used in future computations for $t_{i+1}$, $t_{i+2}$, etc. to compute the attention these tokens need to pay to the past token $t_i$. The query vector $q_i$ is not required to be stored across Transformer layers simply because future tokens $t_{i+1}$, $t_{i+2}$, etc. never need and use $q_i$.
+Imagine you have a request spanning 8,192 tokens (prompt + output). Once you project each of these tokens into the $d_{head}$ dimensional space (using the $W_Q$, $W_K$, and $W_V$ projection matrices), each token's embedding needs to "attend to" all the tokens that came before it. Specifically, each token $t_i$'s query vector $q_i \in \mathbb{R}^{1 \times d_{head}}$ multiplies ${K}^T_{j \le i}$ of dimension $d_{head} \times i$.
 
-Thus we end up storing $(2 \times d_{head} \times H \times L)$ floating point values for each token for the attention operation, where $H =$ the number of KV heads per Transformer layer, and $L =$ the number of layers in the model. We'll call the memory needed to hold one token's key and value vectors, across every layer and KV head, a **KV slot** (or just **slot**).
+How many values must we store for token $t_i$ so future tokens can attend to it?
+* We need **1 key vector $k_i$** and **1 value vector $v_i$** (both of shape $1 \times d_{head}$), since future tokens $t_{i+1}, t_{i+2}, \dots$ reuse them to compute attention over $t_i$.
+* We **do not** store the query vector $q_i$, because future tokens $t_{i+1}, t_{i+2}, \dots$ never use $q_i$.
 
-To make this concrete, consider a LlaMA-3-70B model in FP16 quantized format. This model has 80 layers, each layer with 8 KV heads. $d_{head} = 128$, giving us per token `2 x 128 x 8 x 80 = 163,840` floating point values to store!
-At FP16 precision, we represent each floating point value with 2 bytes, meaning we need a total of $163,840 \times 2 \approx 328 \text{KB}$. Thus for this model, the KV slot size is 328KB.
+Thus, for each token we store $(2 \times d_{head} \times H \times L)$ floating-point values, where $H$ is the number of KV heads per Transformer layer and $L$ is the number of layers in the model. We'll call the memory needed to hold one token's key and value vectors across every layer and KV head a **KV slot** (or just **slot**).
 
-With 8,192 tokens, we need a total space of $328 \text{KB} \times 8192 \approx 2.68 \text{GB}$. This is space needed for __one__ request whose prompt and output together fill 8,192 tokens, which happens to be Llama-3-70B's full context window. In the grand scheme of things, this isn't even a long context by modern standards (context lengths as of the time of writing of this post are ~1M with ease).
+To make this concrete, consider **Llama-3-70B** in FP16 precision ($L = 80$ layers, $H = 8$ KV heads, $d_{head} = 128$, and 2 bytes per FP16 value):
 
-Now consider the decode stage. To generate each new token, the model attends over every previous token, which means reading the _entire_ KV cache out of GPU memory (HBM): the KV vectors for all the prompt tokens, plus those for every output token generated so far. This cache grows by ~328 KB with each new token, and by the end of our 8,192-token request it holds the full 2.68 GB. Suppose we serve this model on 2xA100 GPUs (80GB each), which together give us about 4 TB/s of memory bandwidth. Reading 2.68 GB at 4 TB/s takes $2.68 \text{ GB} / 4000 \text{ GB/s} \approx 0.7 \text{ ms}$. That is up to ~0.7 ms per output token spent just _moving_ KV vectors, before any math happens.
+$$\text{1 KV slot} = 2 \times 128 \times 8 \times 80 \times 2 \text{ bytes} = 163,840 \times 2 \text{ bytes} \approx 328 \text{ KB}$$
 
-And the math itself is cheap. Each 256-byte key vector (128 values x 2 bytes) takes part in a single 128-dim dot product with the query, roughly 256 FLOPs, or ~1 FLOP per byte read. An A100 needs ~150 FLOPs per byte (312 TFLOPS / 2 TB/s) before its compute units become the bottleneck. So attention during decode is heavily _memory-bandwidth-bound_: the GPU spends most of its time waiting on memory, not computing.
+For a single request filling Llama-3-70B's 8,192-token context window (prompt + output), the KV cache alone requires:
 
-On its own, 0.7 ms looks small next to the ~35 ms it takes to stream the model's 140 GB of weights each step. But the weights are read once per step for the _whole batch_, while every request has to read its _own_ KV cache. Batching many requests together is how we spread out the cost of reading the weights, which raises the real question: how many requests can we even fit in memory?
+$$8,192 \text{ slots} \times 328 \text{ KB} \approx \mathbf{2.68 \text{ GB}}$$
 
-The two A100s give us 160GB of HBM2 memory in total, and just holding the model weights requires `70B x 2 bytes = 140 GB`. This leaves 20GB free for other tasks. Assuming CUDA runtime and other driver-level features eat up an additional 10GB, this leaves only 10GB for use with KV slots for requests. If we keep all KV slots in memory per-request, we can hold at most floor(10/2.68) = 3 concurrent requests. Note that this is a __best-case__ estimate - it assumes no memory fragmentation at all from variable-length sequences.
+In the grand scheme of things, 8,192 tokens isn't even a long context by modern standards (where 1M-token contexts are commonplace).
+
+### Decode Is Memory-Bandwidth-Bound
+
+Now consider the decode stage. To generate each new token, the model attends over every previous token, which means reading the _entire_ KV cache out of GPU memory (HBM): all the prompt tokens' KV vectors plus every output token generated so far. This cache grows by ~328 KB per token, reaching the full 2.68 GB by the end of our 8,192-token request.
+
+Suppose we serve this model on **2xA100 GPUs (80 GB each)**, giving us ~4 TB/s of combined HBM bandwidth. Reading 2.68 GB at 4 TB/s takes:
+
+$$\frac{2.68 \text{ GB}}{4000 \text{ GB/s}} \approx \mathbf{0.7 \text{ ms per output token}}$$
+
+That is up to ~0.7 ms per token spent _just moving KV vectors_, before any math happens. And the math itself is cheap: each 256-byte key vector ($128 \times 2$ bytes) takes part in a single 128-dim dot product with the query (~256 FLOPs, or **~1 FLOP per byte read**). An A100 needs **~150 FLOPs per byte** (312 TFLOPS / 2 TB/s) before its compute units become the bottleneck. Attention during decode is therefore heavily **memory-bandwidth-bound**: the GPU spends most of its time waiting on memory, not computing.
+
+On its own, 0.7 ms looks small next to the ~35 ms it takes to stream the model's 140 GB of weights each step. But **model weights are read once per step for the whole batch**, while **every request must read its own KV cache**. Batching many requests together is how we amortize the cost of reading the weights—which raises the real question: _how many requests can we even fit in memory?_
+
+Our two A100s have 160 GB of HBM2 in total:
+* **Model weights:** `70B x 2 bytes = 140 GB`
+* **CUDA runtime & activations:** `~10 GB`
+* **Remaining for KV cache:** **`~10 GB`**
+
+At 2.68 GB per request, we can hold at most $\lfloor 10 / 2.68 \rfloor = \mathbf{3 \text{ concurrent requests}}$—and even that is a _best-case_ estimate assuming zero memory fragmentation.
+
+---
 
 ## Solving A Different Problem: Fragmented Memories
 
-The reality is that on a per-request basis, the output sequence length is (a) unknown _a priori_, and (b) can vary from request-to-request. The prompt length, on the other hand, _is_ known the moment a request arrives. Before vLLM came out with their [PagedAttention paper](https://arxiv.org/pdf/2309.06180), serving systems would allocate KV slots to each request based on input prompt length `prompt_length` and a client-supplied `max_tokens` indicating the maximum number of output tokens the request wants to generate. LLM servers restrict the sum total of all tokens seen by the model per-request -- `prompt_length + max_tokens` -- to be limited to at most `max_seq_length`. If `max_tokens` is unsupplied, the number of output tokens the model _may_ generate (i.e. it may still generate fewer tokens by emitting an `<EOS>` early) defaults to `max_seq_length - prompt_length`.
+When a request arrives, its `prompt_length` is known immediately, but its output length is unknown _a priori_ and varies from request to request. Before vLLM's [PagedAttention paper](https://arxiv.org/pdf/2309.06180), serving systems allocated a contiguous chunk of `prompt_length + max_tokens` KV slots upfront for every request (capped at `max_seq_length`, and defaulting to `max_seq_length` whenever `max_tokens` was left unset). `max_tokens` here is the client-supplied indicator for the maximum number of output tokens it wants to generate.
 
-Reserving `prompt_length + max_tokens` KV slots for every request upfront can lead to 3 types of cost:
+Reserving `prompt_length + max_tokens` contiguous KV slots upfront leads to **3 types of memory waste**:
 
-1. Upfront allocation for the request means that the KV slot for the 100th token out in the future is held right from when the model starts generating the 1st token. Assuming the 100th token _is_ eventually generated, this can be viewed as an "opportunity cost" where this KV slot could have been used for some other concurrent requests.
-1. Within the context of a single request, it is likely that the output sequence generation hits a `<EOS>` token and stops when the request holds `T` tokens in total (prompt + output), such that `T < prompt_length + max_tokens`. This means we would have allocated but never used (i.e. wasted) memory worth `(prompt_length + max_tokens - T)` KV slots.
-1. Assume that the memory allocator is always allocating KV slots for `prompt_length + max_tokens` tokens per-request. It may allocate this memory contiguously from any region in the HBM address space (assuming this much space is available). Because this reservation varies from request to request, the allocator would run into a problem where a freed segment of memory of `G` KV slots between 2 occupied segments can only serve new requests if they require `≤ G` KV slots, but not for other requests where more than `G` are needed. This is a form of "external" fragmentation wastage where memory remains free because it is too small to support new incoming requests.
+1. **Reserved slots (opportunity cost):** The KV slot for the 100th future token is held from the moment the request begins generating its 1st token. Even if that 100th token is eventually generated, that memory sits idle in the meantime instead of serving other concurrent requests.
+2. **Internal fragmentation (over-allocation):** A request usually hits an `<EOS>` token and stops at `T` total tokens (prompt + output) where `T < prompt_length + max_tokens`, wasting `(prompt_length + max_tokens - T)` allocated KV slots.
+3. **External fragmentation:** Because contiguous reservations vary in size across requests, freeing a finished request leaves a contiguous hole of `G` KV slots in HBM that cannot serve any new request needing `> G` slots—stranding free memory in unusable gaps.
 
-To make this more concrete, take the Llama-3-70B model which has a `max_seq_length = 8192`. Assume `max_tokens` is unset. To allocate KV slots for this many tokens, we would need `328 KB (1 KV slot) x 8192 (total tokens) = 2.68 GB` memory. Assume we get a request with a 500-token prompt that ends up generating only 1,500 output tokens though, for 2,000 tokens in total. With this fixed allocation strategy, we would end up using only ~655 MB of this 2.68 GB, effectively wasting ~76% of the allocated KV slots as unused.
+```
+Pre-PagedAttention (Contiguous Reservation per Request, max_seq_length = 8192):
++------------------+-------+----------------------------------+-----+------------------+
+| Prompt (500)     |Gen so | Reserved for future / Unused     | Gap | Request B ...    |
+| [██████████████] |far[██]| [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] | (G) | [████████░░░░░░] |
++------------------+-------+----------------------------------+-----+------------------+
+                           |<---- ~76% wasted (2,036 MB) ---->| ⬆
+                                                                ⬆-- External frag (< Req C)
+```
 
-PagedAttention removes this hard coupling between upfront KV slot reservation and memory allocation per-request. It takes a page (pun intended) out of Operating Systems design principles, and models memory as blocks of space needed to store `B` KV slots (actual size in bytes is `B x slot_size` where `slot_size` is 328 KB in the above example). In vLLM's experiments, they found that using a block size of 16 KV slots is a good middle ground between the page size being too coarse (leads to per-request wasting, same issue as pre-PagedAttention era allocators) or too fine (leads to GPU kernel inefficiency in the attention implementation as smaller blocks reduce GPU memory-access coalescing and parallelism inside the attention kernel).
+To see the impact on Llama-3-70B (`max_seq_length = 8192`, `max_tokens` unset): each request reserves `8192 x 328 KB = 2.68 GB` upfront. If a request has a 500-token prompt and generates 1,500 output tokens (2,000 tokens total), it uses only **~655 MB** of its 2.68 GB reservation—**wasting ~76% (~2,036 MB) of its allocated KV slots**.
 
-Under the hood, PagedAttention achieves this by relying on a block-table. Each request gets its own private block-table. This table maps logical block numbers (e.g. block ids like '0', '1', etc.) to physical block numbers (indices into a large GPU memory pool allocated at startup). Every time a token is generated, the logical block number its KV slot would be stored in is computed (`i`th token's KV slot goes in block `i // B` and in position `i % B` within the block if block size is `B`). That logical block id is looked up in the block-table to get the actual GPU pool index, which is where the KV vectors for this token are actually stored. The block-table also tracks how filled each block is, so that if a block is full, the memory allocator pulls an unused block index from the pool's free list, updates the block table to use it, and resumes generating more tokens.
+### How PagedAttention Fixes This
 
-Standard attention requires KV slots to be in contiguous memory per-request. With the paging of the KV cache and the introduction of the block-table, the attention operator now requires special handling to identify where in the GPU pool the relevant KV slots are located at, and then fetching them. To do this, the vLLM authors wrote a custom CUDA kernel implementing the attention operator with this dynamic fetching of KV slots via the block-table.
+PagedAttention decouples upfront reservation from physical allocation by taking a page (pun intended) out of OS virtual memory design. It partitions the GPU's KV memory pool into fixed-size **blocks** of `B` KV slots (`B x 328 KB` in our example). In vLLM's experiments, **$B = 16$ KV slots** hit the sweet spot between blocks being too coarse (bringing back internal fragmentation) and too fine (hurting GPU memory-access coalescing and parallelism inside the attention kernel).
 
-If you think of memory in blocks of size `B` KV slots, then consider what happens over the lifetime of a request. During prefill, the KV vectors for the prompt tokens are written into `ceil(prompt_length / B)` blocks, allocated as needed. All of these blocks are full except possibly the last one. During decode, each new output token's KV vectors go into the next free slot of that last block, and only once it is full do we allocate a fresh block for the next `B` KV slots.
-This means that at any point in time, only the _last_ block of a request can be partially empty. Even if the request emits `<EOS>` right after using 1 KV slot in a new block, the worst-case total wasted allocation is at most `(B - 1)` KV slots, regardless of how long the prompt or output is. If you take our Llama-3-70B FP16 running example and assume B = 16 (vLLM default), this is a _maximum_ per-request wastage of `(16 - 1) x 328 KB (KV slot size) = 4.92 MB` - this is vastly smaller than the earlier wastage number of `0.76 x 2.68 GB ~= 2036 MB`. 400+ times smaller.
-The other benefit is that now, because the allocator is allocating in these smaller and fixed block sizes and any block is usable via the intermediary block-table, a freed up block by some request `P` can be used by any other request `Q` for its token generation needs. Freed up memory blocks are essentially exchangeable between different requests _irrespective of the prompt size or #output tokens of these requests_.
+Under the hood, each request gets a private **block-table** that maps **logical block IDs** (`0, 1, 2, ...`) to **physical block IDs** (indices into the global GPU memory pool allocated at startup):
+* Token $i$'s KV vectors go into logical block `i // B` at slot offset `i % B`, which the block-table translates into the actual physical block index in HBM.
+* Standard attention kernels expect contiguous KV tensors per request, so vLLM uses a custom CUDA kernel that reads the block-table on the fly to gather non-contiguous physical blocks during attention.
 
-Let's revisit our example from the previous section. Assuming the same h/w setup of 2xA100s with a combined 160GB of HBM2 memory, we discussed how loading a Llama-3-70B FP16 model would eventually yield ~10GB of free GPU HBM.
-With standard attention, we could run at most 3 concurrent requests on such a set up, irrespective of how many tokens each request generated. With PagedAttention, assuming a 500-token prompt generating 1,500 output tokens consistently, we would only need `2000 (num tokens) x 328 KB (KV slot size) ~= 660 MB` space per-request. This means we would be able to run floor(10/0.66) = 15 concurrent requests. This is a massive **5x** increase in concurrency by switching to a paging model for managing KV cache memory.
+```
+PagedAttention (Block Size B = 16 KV slots):
+Logical Blocks (Request P)        Block Table        Physical Block Pool (GPU HBM)
++------------------+              +----+----+        +----------------------------+
+|LB 0: [██████████]| (16/16 full) | 0  | 7  | -----> |PB 7: [██████████] (Req P)  |
+|LB 1: [██████████]| (16/16 full) | 1  | 2  | --+    |PB 1: [██████████] (Req Q)  |
+|LB 2: [███░░░░░░░]| (3/16 used)  | 2  | 5  | -+|--> |PB 2: [██████████] (Req P)  |
++------------------+              +----+----+  |     |PB 3: [░░░░░░░░░░] (Free)   |
+         ^                                     |+--> |PB 5: [███░░░░░░░] (Req P)  |
+ Only the LAST block can have empty slots!           +----------------------------+
+```
 
-PagedAttention is central to the concept of prefix caching, because it breaks down KV cache memory into fixed sized blocks and makes them interchangeably reusable via the block table. This allows for sharing cross-request common prefixes by having them share physical block (i.e. GPU pool index) references. In the next section, we'll investigate the use-case for prefix caching, and how it is implemented in vLLM.
+Tracing a request over its lifetime shows how all three wastes disappear:
+* **On-demand allocation (fixes #1):** During prefill, prompt tokens fill $\lceil \text{prompt\_length} / B \rceil$ blocks allocated on demand. During decode, each new output token's KV vectors go into the next free slot of the last block; a fresh block is pulled from the pool's free list only when that block fills up.
+* **Bounded internal fragmentation (fixes #2):** At any time, **only the last block of a request can be partially empty**, bounding waste to at most $B - 1$ KV slots regardless of prompt or output length. For Llama-3-70B with $B = 16$, worst-case waste per request is $(16 - 1) \times 328\text{ KB} = \mathbf{4.92\text{ MB}}$—over **400x smaller** than the ~2,036 MB wasted before.
+* **Zero external fragmentation (fixes #3):** Because all blocks have the same fixed size $B$ and are addressed indirectly through the block-table, any block freed by request `P` can immediately be reused by any other request `Q`, irrespective of prompt or output lengths.
+
+**The Concurrency Payoff:** Revisiting our 2xA100 setup with ~10 GB of free KV memory, our 2,000-token request (500 prompt + 1,500 output) now consumes only `2000 x 328 KB ~= 660 MB`. Instead of 3 concurrent requests, we can now run $\lfloor 10 / 0.66 \rfloor = \mathbf{15 \text{ concurrent requests}}$—a **5x increase in concurrency**!
+
+PagedAttention also unlocks **prefix caching**: because KV memory is broken into fixed-size blocks addressed via a lookup table, multiple requests sharing a common prompt prefix can simply point their block-tables at the _exact same physical blocks_.
+
+---
 
 ## Resurfacing: Prefix Caching
 
-In industry, it is very common for prompts to contain a 'system prompt' preamble/portion which describes the task at hand to the LLM, provides it with some examples if required, etc. to set up the problem and expected outputs. This system prompt is usually common to all requests made from that system for that use-case. Automated prefix caching would massively help speed up such requests.
+In production LLM applications, requests almost always share a long **system prompt** (instructions, tool definitions, few-shot examples) before the user's query. Because decoder-only models like Llama use causal attention—where each token only attends to earlier tokens—if two requests share a prefix of tokens, **the KV vectors for every token in that shared prefix are 100% identical**. Their KV vectors only begin to diverge at the first token after the longest common prefix.
 
-The core idea of automatic prefix caching is simple. Because each token causally pays attention to only the previous tokens in decoder-only models like in our Llama example above, if 2 different requests share a prefix string, then we can look at their longest common prefix, and conclude that the KV vectors for tokens in that common prefix must be the exact same for both those requests. The KV vectors start differing for the 2 requests at the first position where generated tokens _differ for the very first time_, which by definition, is the immediate next token after where the longest common prefix ends.
+<figure class="blog-fig">
+  <img src="/assets/images/prefix-cache-block-sharing.png">
+  <figcaption>Figure 1. Requests A & B share a 32-token system prompt (B=16)</figcaption>
+</figure>
 
-So then a simple algorithm for prefix caching utilizing a hash table, is as follows:
+### The Hash-Table Algorithm
 
-1. Split the input request (assuming it was tokenized) into a sequence of block-sized (`B`) chunks of tokens.
-1. For each _full_ **[1]** block of tokens, hash the concatenation of the previous block's hash, and the list of these token ids _keeping the ordering of the tokens the same_. I.e. `hash(prev_hash_id, list[token_id])` forms the hash key. The value associated with this hash key is the "physical" block id (i.e. index in GPU memory pool) of the KV slots for this block of tokens.
-1. If there is a cache hit, this tells us 2 things: the previous block exists (in terms of the actual tokens), and it too was followed by the current _full_ block of tokens in the exact same order. I.e., we have seen this exact prefix before.
-    - Upon a cache hit, we take the mapped physical block id and insert it in the request's block-table against the logical block id of this most recent block of tokens.
-    - We increment a `ref_count` counter associated with this physical block id, to keep track of the number of live requests pointing to it.
-    - No KV vectors were computed for this block of `B` tokens, and this is where the real power of prefix caching lies **[2]**. This leads to a direct speedup during the prefill phase and also reuse GPU memory, so no new memory was allocated as well.
-1. If there is a cache miss, we allocate a free block (see description of this process below), set its `ref_count = 1`, add a mapping between the logical block id to physical block id in the request's block-table, and compute the KV vectors for these `B` tokens and write them into that block. Additionally, we insert a mapping `hash(prev_hash_id, block_token_ids) -> physical_block_id` into the prefix cache's hash table for potential use with future requests.
+We can share prefix blocks across requests using a global hash table (`cached_blocks`):
 
-**[1]** We can only cache and re-use full blocks of `B` KV slots because partially full blocks may be actively in use by its owning-request. If we also assign this partially filled block to a second request's tokens, and the 2 requests have diverging generations at some point within that same block, the requests would race and overwrite each other's KV slots. If a block is full, however, it becomes immutable - it is frozen for the requests pointing to it, and only cleared out once it has been marked as having 0 references and another request needs it.
+1. **Chunk into blocks:** Split the tokenized request into blocks of `B` tokens.
+2. **Chained hashing (full blocks only [1]):** For each _full_ block of `B` tokens, compute `block_hash = hash(prev_block_hash, block_token_ids)`, preserving token order. This hash key uniquely identifies the entire token sequence from the start of the prompt up to the end of this block, and maps to a physical block ID in the GPU pool.
+3. **On a Cache Hit:** Both this block and its entire preceding prefix match a previously computed block in GPU memory:
+    - Map the request's current logical block ID to this existing physical block ID in its block-table.
+    - Increment the physical block's `ref_count` (tracking how many active requests reference it).
+    - **Skip computing KV vectors for these `B` tokens entirely [2]**, saving both prefill compute and GPU memory.
+4. **On a Cache Miss:** Allocate a free physical block (process detailed below), set its `ref_count = 1`, map the logical block ID to it, compute and write the `B` tokens' KV vectors into it, and insert `block_hash -> physical_block_id` into `cached_blocks`.
 
-**[2]** Consider just the causal attention part of each Transformer layer in the Llama-3-70B model with a prompt of 500 tokens _without_ prefix caching. For each token $t_i$ we will compute $q_{i, l}$, $k_{i, l}$, and $v_{i, l}$ at layer $l \in \{1, \dots, 80\}$. These are computed using the token $t_i$'s hidden representation and the matrices $W_{Q_{l}}$, $W_{K_{l}}$, and $W_{V_{l}}$. Let's count the number of operations to compute only the K and V vectors for all tokens for each layer $l$. Each layer $l$ starts with some input $h_{i, l - 1}$ (of size `d = 8192`) for token $i$, and projects it into key and value vectors of size $d_{head} = 128$ across all 8 KV heads. This costs `500 (total tokens) x 8 (KV heads) x 2 (K and V) x 8192 (embedding dim) x 2 (multiply-add) x 128 (head dim) = 16.78 billion` operations per layer.
+> **[1] Why only cache _full_ blocks?** A partially filled block is still actively being written to as its owning request generates new tokens. If two diverging requests shared a partially filled block, they would race and overwrite each other's KV slots. Once a block is completely full (`B` slots), it becomes **immutable**—safe for any number of requests to share read-only until its `ref_count` drops to 0 and it is reclaimed.
 
-Let's say we now enable the KV prefix cache and find a match for the first 400 tokens. We now have to compute the KV vectors for just 100 tokens labeled `401, ..., 500`. This instantly reduces the total operations to 1/5th (`3.36 billion` operations—an 80% reduction). Also note: the above shows the calculations saved for just the K and V vector projections, but in reality, we can skip the _entire_ forward pass (query projections, attention outputs, and FFN layers) for the first 400 tokens. This is because for each cached token $t_i$, we do not need to compute the inter-layer hidden state $h_{i, l}$ for layer $l$ -- this was already done by a previous request, and its only outputs needed by future tokens, the vectors $k_{i, l}$ and $v_{i, l}$, were cached across all layers. In actuality, we therefore save a much larger magnitude of operations.
+> **[2] Just how much prefill compute does a cache hit save?** Consider computing the K and V projections in one layer of Llama-3-70B ($d_{\text{model}} = 8192$, $H = 8$ KV heads, $d_{\text{head}} = 128$) for a 500-token prompt _without_ prefix caching:
+>
+> $$500 \text{ (tokens)} \times 8 \text{ (KV heads)} \times 2 \text{ (K, V)} \times 8192 \text{ ($d_{\text{model}}$)} \times 128 \text{ ($d_{\text{head}}$)} \times 2 \text{ (multiply-add)} = \mathbf{16.78 \text{ billion FLOPs/layer}}$$
+>
+> If the first 400 tokens hit in the prefix cache, we only compute KV projections for the remaining 100 tokens (`401..500`), dropping the cost to **1/5th (`3.36 billion` FLOPs/layer—an 80% reduction)**. Better yet, we don't just save the K and V projections: we **skip the entire forward pass** (query projections, attention outputs, and FFN layers) for those 400 cached tokens! Because an earlier request already computed the inter-layer hidden states $h_{i, l}$ and cached their only outputs needed by future tokens ($k_{i, l}$ and $v_{i, l}$ across all layers $l \in \{1, \dots, 80\}$), those 400 tokens aren't fed into the model at all.
 
-The goal is to assign each block in the request to a block id by the end of this process, by maximally re-assigning the prefix tokens to pre-existing blocks if this same prefix was seen before. Note how prefix caching's context is not per-request, but rather across-request - since this is where the prefix block reusability comes into play.
+### Caching Decode Tokens: Multi-Turn Chat
 
-It is also worth noting, that while the use of prefix caching is most apparent in the prefill phase, we can also perform it during the decode phase. In the decode phase, once the next token's KV vectors have been determined at all layers, these vectors will be cached into KV slots in the currently open physical block for this request. If this next token causes this physical block to fill up, we add it to the prefix cache. This is especially useful in **multi-turn chat** use-cases. In this use-case, every time the chatbot answers, we add to the context of the entire history of the chat, and future requests can benefit from caching the KV vectors for this history.
+While prefix caching is easiest to picture during prefill, it also happens during **decode**: as each generated token's KV vectors are written into the request's currently open physical block, **the moment that block fills up (`B` tokens), it is hashed and inserted into the prefix cache**.
 
-For example, consider this interaction:
+This shines in **multi-turn chat**:
+1. **Turn 1 User asks:** `"How is the weather today in Sacramento, CA?"` $\rightarrow$ `[System Prompt + Turn 1 User Prompt]`
+2. **Turn 1 Bot answers:** `"It is sunny and not humid, peaking at 96°F."` $\rightarrow$ `[System Prompt + Turn 1 User Prompt + Turn 1 Bot Output]`
+3. **Turn 2 User asks:** `"Suggest some hikes nearby."` $\rightarrow$ `[System Prompt + Turn 1 User Prompt + Turn 1 Bot Output + Turn 2 User Prompt]`
 
-1. **Turn 1 User asks:** "How is the weather today in Sacramento, CA?" -> [System Prompt + Turn 1 User Prompt]
-1. **Turn 1 Bot answers:** "It is sunny and not humid, with temperatures peaking at 96 degrees Fahrenheit." -> [System Prompt + Turn 1 User Prompt + Turn 1 Chatbot Output]
-1. **Turn 2 User asks:** "Suggest some hikes nearby."
+When Turn 2 arrives, its prefix `[System Prompt + Turn 1 User Prompt + Turn 1 Bot Output]` was already cached block-by-block during Turn 1's prefill and decode! Turn 2 only needs to run prefill on `Turn 2 User Prompt`, slashing Time-To-First-Token (TTFT).
 
-In the 2nd turn of this chat, consider the prefix that the chat system will generate. It will generate `[System Prompt + Turn 1 User Prompt + Turn 1 Chatbot Output + Turn 2 User Prompt]`. But notice that the `[System Prompt + Turn 1 User Prompt + Turn 1 Chatbot Output]` portion of this text is just the output that was generated by the LLM in the 1st turn! So if the 1st turn caches it's sequence of prefix blocks, the 2nd turn can use these cached KV vector references, and will only need to compute attention on the `Turn 2 User Prompt` portion for generating the next new token. This will dramatically reduce Time To First Token as well as meet multi-tenant throughput constraints too.
+### Block Lifecycle: The Free List & Inactive LRU Queue
 
-The algorithm needs to be a little meticulous in tracking the usage of blocks, freeing up blocks once a request indicates that it has completed processing, and reclaiming previously freed blocks.
-In the event of a cache miss, a new free block must be sought for use with the current `B` tokens in question. There are 2 sources of free blocks:
+When a cache miss occurs, the allocator needs a free physical block. Free blocks come from two sources, in priority order:
 
-- Blocks that have never been touched/used before, i.e. completely unused blocks, and
-- Blocks that have been used before, but their parent requests have since finished and marked these blocks as eligible for reuse.
+<figure class="blog-fig">
+  <img src="/assets/images/prefix-cache-state-machine.png">
+  <figcaption>Figure 2. State transitions of a physical block in Prefix Cache</figcaption>
+</figure>
 
-The first case is easy - we simply keep a list of physical block ids in memory, and keep popping off new unused ids from this list until this list is empty. Once this list is empty, we no longer have any more "untouched" physical blocks left for the remainder of the server's lifecycle, and so this "free list" becomes defunct and all sourcing of free blocks shifts to the second case.
+1. **Untouched Free List:** At startup, all physical block IDs sit in a simple free list. We pop unused IDs from this list until every block in the GPU pool has been used at least once, after which this list is permanently empty.
+2. **Inactive LRU Queue (`eviction_queue`):** When a request finishes, we decrement `ref_count` on each of its blocks. If a block's `ref_count` reaches `0`, we mark it **inactive** and push it into an **LRU eviction queue**—_without_ wiping its KV vectors or removing its hash from `cached_blocks`:
+   * **Rescue on Hit:** If a new request gets a cache hit on an inactive block, we remove it from the LRU queue, increment `ref_count = 1`, and reuse its intact KV vectors with zero compute.
+   * **Evict on Miss:** If we need a fresh block on a cache miss (and the untouched free list is empty), we pop the **least-recently-used** block from the front of the LRU queue, delete its old hash from `cached_blocks`, and overwrite it with the new block's KV vectors.
 
-In the second case, blocks that are no longer in use by _any_ of their parent requests are marked as 'inactive'. The fact that they are no longer in use is tracked by a per-block level `ref_count` variable. This counts the number of **active** requests referencing the block in some way. Every time a request frees its blocks, for each block freed, we _decrement_ its `ref_count`. We only mark a block inactive if its `ref_count == 0`. These 'inactive' blocks are stored in a Least Recently Used (LRU) queue, based on their access time. Note that we do _not_ clear out the contents of these blocks just yet. It is possible that a new request has some `B` tokens that match this block's history as well as contents, in which case we can simply rescue this block from the "inactive queue" and bring it back into active use with 0 additional work (as it already holds the KV vectors we desire). For sourcing a free block from the inactive queue in the case there's a complete cache miss, we pick off the block which has spent the longest time in this LRU queue. We also remove the corresponding entry for this block from the prefix cache hash table, since its contents are about to be overwritten completely.
+### Summary: Putting the Numbers Together
+
+Across our running **Llama-3-70B FP16** example on **2xA100 (10 GB KV cache budget)** for requests with a **500-token prompt (400-token shared system prompt + 100-token user query) and 1,500-token output**:
+
+| Memory Management Strategy | KV Memory per Request | Max Concurrent Requests (in 10 GB) | Max Wasted KV Memory / Req | Prefill Tokens Computed (Requests 2..N) |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Contiguous (`max_seq_len = 8192`)** | `2.68 GB` | **3** | `~2,036 MB` (76%) | `500 tokens` (100%) |
+| **2. PagedAttention (`B = 16`)** | `~660 MB` | **15** (5x) | `4.92 MB` (< 1%) | `500 tokens` (100%) |
+| **3. PagedAttention + Prefix Caching** | `~525 MB` unique + `131 MB` shared once | **18** (6x) | `4.92 MB` (< 1%) | **`100 tokens` (80% saved!)** |
+
+---
 
 ## Prefix Caching In Action: Code Example
 
@@ -208,7 +278,7 @@ class PrefixCachingBlockAllocator:
           # This same block will now be inserted into the dict as
           # a new value, associated with a _potentially different_
           # content hash.
-          if pblock.content_hash:
+          if pblock.content_hash is not None:
             del self.cached_blocks[pblock.content_hash]
 
           # Reset the block; we will reference it when we see cache-hits.
